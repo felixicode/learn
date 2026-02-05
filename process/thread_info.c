@@ -4,7 +4,6 @@
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include<pthread.h>
-//#include<sstring.h>
 
 void *thread_fn(void *arg)
 {
