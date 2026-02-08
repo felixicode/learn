@@ -2,19 +2,50 @@
 #include<stdio.h>
 #include<unistd.h>
 #include<stdlib.h>
+#include<fcntl.h>
+#include<string.h>
 #include<pthread.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include<time.h>
+
+char g_buf[8 * 1024 * 1024];
+int g_posw;
+int g_posr;
+pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void *thread_fn(void *arg)
 {
 	while(1)
 	{
 		int id = syscall(SYS_gettid);
-		printf("tid:%d num:%ld\n", id, random());
+		pthread_mutex_lock(&g_lock);
+		g_posw += sprintf(g_buf + g_posw, "tid:%d num:%ld\n", id, random());
+		pthread_mutex_unlock(&g_lock);
 		sleep(1);
 	}
+
+	return NULL;
+}
+
+void *thread_log_fn(void *arg)
+{
+	char *buf = malloc(8 * 1024 * 1024);
+	int fd = open("log.log", O_RDWR | O_CREAT | O_TRUNC, 06666);
+	int n;
+
+	memset(buf, 0, 8 * 1024 * 1024);
+
+	while (1)
+	{
+		sleep(5);
+		pthread_mutex_lock(&g_lock);
+		n = sprintf(buf, "%s",g_buf + g_posr);
+		g_posr += n;
+		pthread_mutex_unlock(&g_lock);
+		write(fd, buf, n);
+	}
+
 	return NULL;
 }
 
@@ -24,8 +55,12 @@ int main()
 	pthread_t p;
 
 	srandom(time(NULL));
-	for(i = 0; i < 10; i++)
+
+	for (i = 0; i < 10; i++)
 		r = pthread_create(&p, NULL, thread_fn, NULL);
+
+	r = pthread_create(&p, NULL, thread_log_fn, NULL);
+
 	while (1)
 		sleep(1);
 }
