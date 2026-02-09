@@ -7,6 +7,7 @@
 #include<pthread.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include<time.h>
 
 char g_buf[8 * 1024 * 1024];
@@ -16,13 +17,28 @@ pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void *thread_fn(void *arg)
 {
+	struct tm *ti;
+	char time_str[64] = { 0 };
+	struct timeval tv;
+	int id = syscall(SYS_gettid);
+	char usec_str[10];
+
 	while(1)
 	{
-		int id = syscall(SYS_gettid);
+		memset(time_str, 0, sizeof(time_str));
+
+		gettimeofday(&tv, NULL);
+		ti = localtime(&tv.tv_sec);
+		strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", ti);
+
+		snprintf(usec_str, sizeof(usec_str), ".%07ld", tv.tv_usec);
+		if (strlen(time_str) + strlen(usec_str) < sizeof(time_str))
+			strcat(time_str, usec_str);
+
 		pthread_mutex_lock(&g_lock);
-		g_posw += sprintf(g_buf + g_posw, "tid:%d num:%ld\n", id, random());
+		g_posw += sprintf(g_buf + g_posw, "%s tid:%d num:%ld\n",time_str, id, random());
 		pthread_mutex_unlock(&g_lock);
-		sleep(1);
+		usleep(1 * 900 * 998);
 	}
 
 	return NULL;
