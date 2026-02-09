@@ -10,9 +10,10 @@
 #include <sys/time.h>
 #include<time.h>
 
-char g_buf[8 * 1024 * 1024];
+char g_buf[1024];
 int g_posw;
 int g_posr;
+int g_drop;
 pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void *thread_fn(void *arg)
@@ -36,7 +37,10 @@ void *thread_fn(void *arg)
 			strcat(time_str, usec_str);
 
 		pthread_mutex_lock(&g_lock);
-		g_posw += sprintf(g_buf + g_posw, "%s tid:%d num:%ld\n",time_str, id, random());
+		if(g_posw >= sizeof(g_buf))
+			g_drop++;
+		else
+			g_posw += snprintf(g_buf + g_posw, sizeof(g_buf) - g_posw, "%s tid:%d num:%ld\n",time_str, id, random());
 		pthread_mutex_unlock(&g_lock);
 		usleep(1 * 900 * 998);
 	}
@@ -77,6 +81,11 @@ int main()
 
 	r = pthread_create(&p, NULL, thread_log_fn, NULL);
 
-	while (1)
+	while (1) {
 		sleep(1);
+		printf("drop:%d\n", g_drop);
+		pthread_mutex_lock(&g_lock);
+		g_drop = 0;
+		pthread_mutex_unlock(&g_lock);
+	}
 }
