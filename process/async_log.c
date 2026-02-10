@@ -1,19 +1,24 @@
 #define _GNU_SOURCE
-#include<stdio.h>
-#include<unistd.h>
-#include<stdlib.h>
-#include<fcntl.h>
-#include<string.h>
-#include<pthread.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <stdbool.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <string.h>
+#include <pthread.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/time.h>
-#include<time.h>
+#include <time.h>
 
-char g_buf[2 * 1024];
+char g_buf[2 * 1024 * 1024];
 int g_posw;
 int g_drop;
+bool g_need_flush = false;
+
 pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t  g_cond;
 
 void *thread_fn(void *arg)
 {
@@ -23,8 +28,7 @@ void *thread_fn(void *arg)
 	int id = syscall(SYS_gettid);
 	char usec_str[10];
 
-	while(1)
-	{
+	while (1) {
 		memset(time_str, 0, sizeof(time_str));
 
 		gettimeofday(&tv, NULL);
@@ -36,10 +40,15 @@ void *thread_fn(void *arg)
 			strcat(time_str, usec_str);
 
 		pthread_mutex_lock(&g_lock);
-		if(g_posw >= sizeof(g_buf))
-			g_drop++;
-		else
+		if (g_posw >= (sizeof(g_buf) / 2)) {
+			g_need_flush = true;
+			pthread_cond_signal(&g_cond);
+			if(g_posw >= sizeof(g_buf))
+				g_drop++;
+		} else {
 			g_posw += snprintf(g_buf + g_posw, sizeof(g_buf) - g_posw, "%s tid:%d num:%ld\n",time_str, id, random());
+		}
+
 		pthread_mutex_unlock(&g_lock);
 		usleep(1 * 900 * 998);
 	}
@@ -51,15 +60,30 @@ void *thread_log_fn(void *arg)
 {
 	char *buf = malloc(8 * 1024 * 1024);
 	int fd = open("log.log", O_RDWR | O_CREAT | O_TRUNC, 06666);
-	int n;
+	int n, r = 0;
 
 	memset(buf, 0, 8 * 1024 * 1024);
 
-	while (1)
-	{
-		sleep(5);
+	while (1) {
+		pthread_mutex_lock(&g_lock);
+		struct timespec tim;
+		clock_gettime(CLOCK_REALTIME, &tim);
+		tim.tv_sec += 5;
+		while (!g_need_flush) {
+			r = pthread_cond_timedwait(&g_cond, &g_lock, &tim);
+			if(r == ETIMEDOUT)
+				break;
+		}
+
+		if(r != ETIMEDOUT)
+			g_need_flush = false;
+
+		printf("wakeup by %s\n", r == ETIMEDOUT ? "timeout" : "data size");
+		pthread_mutex_unlock(&g_lock);
+
 		pthread_mutex_lock(&g_lock);
 		memcpy(buf, g_buf, g_posw);
+		n = g_posw;
 		g_posw = 0;
 		pthread_mutex_unlock(&g_lock);
 		write(fd, buf, n);
