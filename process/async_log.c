@@ -86,6 +86,7 @@ void *thread_log_fn(void *arg)
 		n = g_posw;
 		g_posw = 0;
 		pthread_mutex_unlock(&g_lock);
+		/* To avoid hold lock too long time, move 'write' out of the lock */
 		write(fd, buf, n);
 	}
 
