@@ -10,9 +10,8 @@
 #include <sys/time.h>
 #include<time.h>
 
-char g_buf[1024];
+char g_buf[2 * 1024];
 int g_posw;
-int g_posr;
 int g_drop;
 pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -60,8 +59,8 @@ void *thread_log_fn(void *arg)
 	{
 		sleep(5);
 		pthread_mutex_lock(&g_lock);
-		n = sprintf(buf, "%s",g_buf + g_posr);
-		g_posr += n;
+		memcpy(buf, g_buf, g_posw);
+		g_posw = 0;
 		pthread_mutex_unlock(&g_lock);
 		write(fd, buf, n);
 	}
